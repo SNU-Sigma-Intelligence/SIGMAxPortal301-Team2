@@ -1,9 +1,9 @@
 # SIGMAxPortal301-Team2
 
-# 연습과제
+## 연습과제
 T1. Marker-based Tracking
 Pnp를 통해 마커가 있는 물체(UIR LED plate)의 자세를 추정합니다.
-# 심화과제
+## 심화과제
 1. Random Marker Problem
 T1에서는 plate 상의 마커 위치가 정확히 배치되어있었습니다. 임의의 오브젝트에 임의로 마커를 붙인 상황에서 마커들간의 위치관계를 추정하고, 최종적으로 초깃값 대비 실시간 오브젝트 자세를 추정해봅니다.
 2. Multi-camera Tracking System
