@@ -34,7 +34,7 @@ def show_picture(tensor, title="Title"):
     plt.axis('off')
     plt.show()
 
-def heuristic_marker_highlight(frame, threshold=0.5, number_of_marker=3, picture=False):
+def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, marker_size_threshold=40, number_of_markers=3, picture=False):
     black_pixel_indices = torch.nonzero((frame < threshold).all(dim=0), as_tuple=False)
 
     mask = torch.zeros(frame.shape[1:], dtype=torch.uint8)
@@ -45,39 +45,82 @@ def heuristic_marker_highlight(frame, threshold=0.5, number_of_marker=3, picture
         indices = np.argwhere(labeled == seg_id)
         segments[f"segment {seg_id}"] = indices
 
-    bboxes = {}
-    height, width = frame.shape[1], frame.shape[2]
-    for seg_id, indices in segments.items():
-        ymin, xmin = np.min(indices, axis=0)
-        ymax, xmax = np.max(indices, axis=0)
-        ext_ymin = max(0, ymin - 30)
-        ext_xmin = max(0, xmin - 30)
-        ext_ymax = min(height - 1, ymax + 30)
-        ext_xmax = min(width - 1, xmax + 30)
-        bboxes[seg_id] = {
-            'bbox': (ymin, xmin, ymax, xmax),
-            'extended_bbox': (ext_ymin, ext_xmin, ext_ymax, ext_xmax)
-        }
-    
-    for seg_id, props in bboxes.items():
-        ext_ymin, ext_xmin, ext_ymax, ext_xmax = props['extended_bbox']
-        region = frame[:, ext_ymin:ext_ymax+1, ext_xmin:ext_xmax+1]
-        avg_whiteness = region.mean().item()
-        bboxes[seg_id]['avg_whiteness'] = avg_whiteness
-    sorted_segments = sorted(bboxes.items(), key=lambda x: x[1]['avg_whiteness'], reverse=True)
+    eligible_segments = {}
+    for name, indices in segments.items():
+        x_min, x_max = indices[:, 1].min(), indices[:, 1].max()
+        y_min, y_max = indices[:, 0].min(), indices[:, 0].max()
+        width = x_max - x_min + 1
+        height = y_max - y_min + 1
+        if (width < marker_size_threshold and height < marker_size_threshold 
+            and width < 3 * height and height < 3 * width):
+            eligible_segments[name] = indices
+    sorted_segments = sorted(eligible_segments.items(), key=lambda x: len(x[1]), reverse=True)
 
-    if len(sorted_segments) >= number_of_marker:
-        name_order = [f'Marker {i}' for i in range(1, number_of_marker + 1)]
-        segments = {name: segments[seg_id] for name, (seg_id, _) in zip(name_order, sorted_segments[:3])}
-    else:
-        raise ValueError("Not enough segments found to assign O, A, B.")
-    
+    renamed_segments = {}
+    if len(sorted_segments) > number_of_markers:
+        for i in range(number_of_markers):
+            renamed_segments[f"Marker {i+1}"] = sorted_segments[i][1]
+
+    segments = renamed_segments
+
     print(f"{black_pixel_indices.shape[0]} Black Pixels, ", f"{num_features} Segments.")
+
+    marker = {}
+    for key in segments.keys():
+        marker[key] = torch.mean(torch.tensor(segments[key]).to(dtype=torch.float32), dim=0)
 
     if picture:
         highlighted_frame = frame.clone()
-        for i in range(number_of_marker):
+        for i in range(number_of_markers):
             highlighted_frame[:, segments[f'Marker {i+1}'][:, 0], segments[f'Marker {i+1}'][:, 1]] = torch.tensor([1.0, 0.0, 0.0]).view(3, 1)
+            
 
-        return segments, highlighted_frame
-    return segments
+        return marker, highlighted_frame
+    return marker
+
+def marker_highlight(frame, previous_marker, threshold=0.5, pixel_per_marker=50, picture=False):
+    marker = {}
+    
+    black_pixel_indices = torch.nonzero((frame < threshold).all(dim=0), as_tuple=False)
+    mask = torch.zeros(frame.shape[1:], dtype=torch.uint8)
+    mask[black_pixel_indices[:, 0], black_pixel_indices[:, 1]] = 1
+    
+    for key in previous_marker.keys():
+        coord = previous_marker[key]
+        diff = black_pixel_indices.to(torch.float32) - coord
+        distances = torch.sqrt((diff ** 2).sum(dim=1))
+        sorted_indices = torch.argsort(distances)
+        closest_indices = black_pixel_indices[sorted_indices[:pixel_per_marker]]
+        marker[key] = closest_indices
+
+    segments = marker
+    marker = {}
+    for key in segments.keys():
+        marker[key] = torch.mean(torch.tensor(segments[key]).to(dtype=torch.float32), dim=0)
+
+    if picture:
+        highlighted_frame = frame.clone()
+        for key in segments.keys():
+            highlighted_frame[:, segments[key][:, 0], segments[key][:, 1]] = torch.tensor([1.0, 0.0, 0.0]).view(3, 1)
+        return marker, highlighted_frame
+    return marker
+
+def show_picture_with_marker_vector(frame, marker, title="Title"):
+    img = frame.permute(1, 2, 0).cpu().numpy()
+    plt.imshow(img)
+    plt.title(title)
+    plt.axis('off')
+
+    origin = marker.get("Marker 1")
+    if origin is not None:
+        origin_x, origin_y = origin[1].item(), origin[0].item()
+        for key, value in marker.items():
+            if key == "Marker 1":
+                continue
+            target_x, target_y = value[1].item(), value[0].item()
+            dx = target_x - origin_x
+            dy = target_y - origin_y
+            plt.arrow(origin_x, origin_y, dx, dy, color='blue', linewidth=2, head_width=5, head_length=5)
+            plt.text(origin_x + dx/2, origin_y + dy/2, f"1 to {key.split()[-1]}", color='blue', fontsize=12)
+
+    plt.show()
