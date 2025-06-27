@@ -34,7 +34,7 @@ def show_picture(tensor, title="Title"):
     plt.axis('off')
     plt.show()
 
-def heuristic_marker_highlight(frame, threshold=0.5, picture=False):
+def heuristic_marker_highlight(frame, threshold=0.5, number_of_marker=3, picture=False):
     black_pixel_indices = torch.nonzero((frame < threshold).all(dim=0), as_tuple=False)
 
     mask = torch.zeros(frame.shape[1:], dtype=torch.uint8)
@@ -66,8 +66,8 @@ def heuristic_marker_highlight(frame, threshold=0.5, picture=False):
         bboxes[seg_id]['avg_whiteness'] = avg_whiteness
     sorted_segments = sorted(bboxes.items(), key=lambda x: x[1]['avg_whiteness'], reverse=True)
 
-    if len(sorted_segments) >= 3:
-        name_order = ['O', 'A', 'B']
+    if len(sorted_segments) >= number_of_marker:
+        name_order = [f'Marker {i}' for i in range(1, number_of_marker + 1)]
         segments = {name: segments[seg_id] for name, (seg_id, _) in zip(name_order, sorted_segments[:3])}
     else:
         raise ValueError("Not enough segments found to assign O, A, B.")
@@ -76,9 +76,8 @@ def heuristic_marker_highlight(frame, threshold=0.5, picture=False):
 
     if picture:
         highlighted_frame = frame.clone()
-        highlighted_frame[:, segments['O'][:, 0], segments['O'][:, 1]] = torch.tensor([1.0, 0.0, 0.0]).view(3, 1)
-        highlighted_frame[:, segments['A'][:, 0], segments['A'][:, 1]] = torch.tensor([0.0, 1.0, 0.0]).view(3, 1)
-        highlighted_frame[:, segments['B'][:, 0], segments['B'][:, 1]] = torch.tensor([0.0, 0.0, 1.0]).view(3, 1)
+        for i in range(number_of_marker):
+            highlighted_frame[:, segments[f'Marker {i+1}'][:, 0], segments[f'Marker {i+1}'][:, 1]] = torch.tensor([1.0, 0.0, 0.0]).view(3, 1)
 
         return segments, highlighted_frame
     return segments
