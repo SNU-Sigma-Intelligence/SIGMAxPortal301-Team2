@@ -5,7 +5,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-def read_video_to_tensor(path: str, frame_step: int = 10) -> torch.Tensor:
+def read_video_to_tensor(path: str, frame_step: int = 10, max_frame: int = 10000000) -> torch.Tensor:
     cap = cv2.VideoCapture(path)
     frames = []
     frame_index = 0
@@ -19,6 +19,8 @@ def read_video_to_tensor(path: str, frame_step: int = 10) -> torch.Tensor:
             frame_tensor = torch.from_numpy(frame).permute(2, 0, 1).float() / 255.0
             frames.append(frame_tensor)
         frame_index += 1
+        if frame_index >= max_frame:
+            break
 
     cap.release()
 
@@ -34,7 +36,7 @@ def show_picture(tensor, title="Title"):
     plt.axis('off')
     plt.show()
 
-def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, marker_size_threshold=40, number_of_markers=3, picture=False):
+def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, ratio_threshold=3, marker_size_threshold=40, number_of_markers=3, picture=False):
     black_pixel_indices = torch.nonzero((frame < threshold).all(dim=0), as_tuple=False)
 
     mask = torch.zeros(frame.shape[1:], dtype=torch.uint8)
@@ -52,7 +54,7 @@ def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, marker_size
         width = x_max - x_min + 1
         height = y_max - y_min + 1
         if (width < marker_size_threshold and height < marker_size_threshold 
-            and width < 3 * height and height < 3 * width):
+            and width < ratio_threshold * height and height < ratio_threshold * width):
             eligible_segments[name] = indices
     sorted_segments = sorted(eligible_segments.items(), key=lambda x: len(x[1]), reverse=True)
 
@@ -124,3 +126,44 @@ def show_picture_with_marker_vector(frame, marker, title="Title"):
             plt.text(origin_x + dx/2, origin_y + dy/2, f"1 to {key.split()[-1]}", color='blue', fontsize=12)
 
     plt.show()
+
+
+def rotation_from_projections_assuming_perfect_2d_camera(proj1: torch.Tensor, proj2: torch.Tensor) -> torch.Tensor:
+    """
+    Given:
+      proj1: 2×3 tensor of orthographic projections of 3 non-collinear 3D vectors
+             onto plane 1 (each column is one vector's (x,y) in plane 1 coords)
+      proj2: 2×3 tensor of the same 3 vectors projected onto plane 2
+    Returns:
+      R: 3×3 rotation matrix mapping plane-1’s normal to plane-2’s normal
+    """
+    H = proj2 @ torch.pinverse(proj1)    
+
+    U, S, Vt = torch.svd(H)
+    H_ortho = U @ Vt                        
+    
+    if torch.det(H_ortho) < 0:
+        Vt[-1, :] *= -1
+        H_ortho = U @ Vt
+
+    phi = torch.atan2(H_ortho[1,0], H_ortho[0,0])
+
+    M = H_ortho - torch.eye(2)
+    _, _, Vt2 = torch.svd(M)
+    u2 = Vt2[:, -1]
+    u2 = u2 / u2.norm()
+
+    k = torch.tensor([u2[0], u2[1], 0.0], dtype=proj1.dtype, device=proj1.device)
+    k = k / k.norm()
+
+    K = torch.tensor([[    0,   -k[2],   k[1]],
+                      [ k[2],      0,  -k[0]],
+                      [-k[1],   k[0],      0]],
+                     dtype=k.dtype, device=k.device)
+
+    I3 = torch.eye(3, dtype=k.dtype, device=k.device)
+    R = (I3 * torch.cos(phi)
+         + (1 - torch.cos(phi)) * k.unsqueeze(1) @ k.unsqueeze(0)
+         + torch.sin(phi) * K)
+
+    return R
