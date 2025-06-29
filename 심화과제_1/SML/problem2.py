@@ -2,6 +2,7 @@ import torch
 import cv2
 from scipy.ndimage import label
 import numpy as np
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 
@@ -128,42 +129,24 @@ def show_picture_with_marker_vector(frame, marker, title="Title"):
     plt.show()
 
 
-def rotation_from_projections_assuming_perfect_2d_camera(proj1: torch.Tensor, proj2: torch.Tensor) -> torch.Tensor:
+def compute_projection_relation_assuming_perfect_2d_camera(
+    X: torch.Tensor,
+    Y: torch.Tensor,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Given:
-      proj1: 2×3 tensor of orthographic projections of 3 non-collinear 3D vectors
-             onto plane 1 (each column is one vector's (x,y) in plane 1 coords)
-      proj2: 2×3 tensor of the same 3 vectors projected onto plane 2
-    Returns:
-      R: 3×3 rotation matrix mapping plane-1’s normal to plane-2’s normal
+    Compute in-plane 2×2 map M, angle θ, and intersection-line direction e.
+
+    Y = M X
+    M = Y X^T (X X^T)^{-1}
+    θ = arccos(det(M))
+    M e = e
     """
-    H = proj2 @ torch.pinverse(proj1)    
-
-    U, S, Vt = torch.svd(H)
-    H_ortho = U @ Vt                        
-    
-    if torch.det(H_ortho) < 0:
-        Vt[-1, :] *= -1
-        H_ortho = U @ Vt
-
-    phi = torch.atan2(H_ortho[1,0], H_ortho[0,0])
-
-    M = H_ortho - torch.eye(2)
-    _, _, Vt2 = torch.svd(M)
-    u2 = Vt2[:, -1]
-    u2 = u2 / u2.norm()
-
-    k = torch.tensor([u2[0], u2[1], 0.0], dtype=proj1.dtype, device=proj1.device)
-    k = k / k.norm()
-
-    K = torch.tensor([[    0,   -k[2],   k[1]],
-                      [ k[2],      0,  -k[0]],
-                      [-k[1],   k[0],      0]],
-                     dtype=k.dtype, device=k.device)
-
-    I3 = torch.eye(3, dtype=k.dtype, device=k.device)
-    R = (I3 * torch.cos(phi)
-         + (1 - torch.cos(phi)) * k.unsqueeze(1) @ k.unsqueeze(0)
-         + torch.sin(phi) * K)
-
-    return R
+    XXT = X @ X.T
+    M = Y @ X.T @ torch.inverse(XXT)
+    detM = torch.det(M).clamp(-1.0, 1.0)
+    theta = torch.acos(detM)
+    eigvals, eigvecs = torch.linalg.eig(M)
+    idx = torch.argmin((eigvals - 1.0).abs()).item()
+    e = eigvecs[:, idx].real
+    e = e / e.norm()
+    return M, theta, e
