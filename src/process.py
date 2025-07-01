@@ -2,6 +2,36 @@ import torch
 import cv2
 import numpy as np
 
+from utils import Camera
+
+def perform_PnP(camera: Camera, points_3D: torch.Tensor, points_2D: torch.Tensor) -> torch.Tensor:
+    """
+    Performs Perspective-n-Point (PnP) algorithm to estimate the pose of a camera given 3D points and their corresponding 2D projections.
+
+    Args:
+        camera (Camera): Camera object containing intrinsic parameters.
+        points_3D (torch.Tensor): Tensor of shape [N, 3] representing 3D points in the world coordinate system.
+        points_2D (torch.Tensor): Tensor of shape [N, 2] representing 2D projections of the 3D points in the image plane.
+
+    Returns:
+        torch.Tensor: Rotation vector and translation vector as a tensor of shape [3, 4].
+    """
+    K = camera.calibration_matrix.cpu().numpy()
+    dist_coeffs = camera.distortion_coeffs.cpu().numpy()
+
+    points_3D_np = points_3D.cpu().numpy()
+    points_2D_np = points_2D.cpu().numpy()
+
+    success, rvec, tvec = cv2.solvePnP(points_3D_np, points_2D_np, K, dist_coeffs)
+    
+    if not success:
+        raise RuntimeError("PnP failed to find a solution")
+
+    R, _ = cv2.Rodrigues(rvec)
+    pose = np.hstack((R, tvec.reshape(-1, 1)))
+    
+    return torch.from_numpy(pose).float()
+
 def extract_sift_features(image: torch.Tensor) -> torch.Tensor:
     """
     Extracts SIFT features from an RGB image tensor.
