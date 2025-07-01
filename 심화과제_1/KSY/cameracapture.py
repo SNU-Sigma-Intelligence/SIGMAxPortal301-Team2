@@ -16,7 +16,7 @@ def detect_blobs(image, setting):
     points = np.array([kp.pt for kp in keypoints], dtype=np.float32)
     return points, keypoints
 
-image = cv.imread("marker.png")
+image = cv.imread("gray image.png")
 gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
 firstpoints, firstkeypoints = detect_blobs(image,15)
 
