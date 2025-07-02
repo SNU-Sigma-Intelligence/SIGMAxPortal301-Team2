@@ -6,11 +6,19 @@ from typing import Tuple
 
 import matplotlib.pyplot as plt
 
-def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, ratio_threshold=3, marker_size_threshold=40, number_of_markers=3, picture=False):
-    black_pixel_indices = torch.nonzero((frame < threshold).all(dim=0), as_tuple=False)
+def heuristic_marker_highlight_for_first_frame(frame, marker="red", 
+                                               black_threshold=0.5, red_threshold=0.8, gb_threshold=0.2,
+                                               ratio_threshold=3, marker_size_threshold=40, number_of_markers=3, picture=False):
+    if marker == "black":
+        pixel_indices = torch.nonzero((frame < black_threshold).all(dim=0), as_tuple=False)
+    elif marker == "red":
+        is_red = (frame[0] > red_threshold) & (frame[1] < gb_threshold) & (frame[2] < gb_threshold)
+        pixel_indices = torch.nonzero(is_red, as_tuple=False)
+    else:
+        raise ValueError(f"Unsupported marker color: {marker}")
 
     mask = torch.zeros(frame.shape[1:], dtype=torch.uint8)
-    mask[black_pixel_indices[:, 0], black_pixel_indices[:, 1]] = 1
+    mask[pixel_indices[:, 0], pixel_indices[:, 1]] = 1
     labeled, num_features = label(mask.numpy())
     segments = {}
     for seg_id in range(1, num_features + 1):
@@ -35,7 +43,7 @@ def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, ratio_thres
 
     segments = renamed_segments
 
-    print(f"{black_pixel_indices.shape[0]} Black Pixels, ", f"{num_features} Segments.")
+    print(f"{pixel_indices.shape[0]} {marker} Pixels, ", f"{num_features} Segments.")
 
     marker = {}
     for key in segments.keys():
@@ -44,25 +52,34 @@ def heuristic_marker_highlight_for_first_frame(frame, threshold=0.5, ratio_thres
     if picture:
         highlighted_frame = frame.clone()
         for i in range(number_of_markers):
-            highlighted_frame[:, segments[f'Marker {i+1}'][:, 0], segments[f'Marker {i+1}'][:, 1]] = torch.tensor([1.0, 0.0, 0.0]).view(3, 1)
+            highlighted_frame[:, segments[f'Marker {i+1}'][:, 0], segments[f'Marker {i+1}'][:, 1]] = torch.tensor([0.0, 1.0, 0.0]).view(3, 1)
             
 
         return marker, highlighted_frame
     return marker
 
-def marker_highlight(frame, previous_marker, threshold=0.5, pixel_per_marker=50, picture=False):
-    marker = {}
+def marker_highlight(frame, previous_marker, marker="red",
+                      black_threshold=0.5, red_threshold=0.8, gb_threshold=0.2,
+                      pixel_per_marker=50, picture=False):
     
-    black_pixel_indices = torch.nonzero((frame < threshold).all(dim=0), as_tuple=False)
+    if marker == "black":
+        pixel_indices = torch.nonzero((frame < black_threshold).all(dim=0), as_tuple=False)
+    elif marker == "red":
+        is_red = (frame[0] > red_threshold) & (frame[1] < gb_threshold) & (frame[2] < gb_threshold)
+        pixel_indices = torch.nonzero(is_red, as_tuple=False)
+    else:
+        raise ValueError(f"Unsupported marker color: {marker}")
+    
+    marker = {}
     mask = torch.zeros(frame.shape[1:], dtype=torch.uint8)
-    mask[black_pixel_indices[:, 0], black_pixel_indices[:, 1]] = 1
+    mask[pixel_indices[:, 0], pixel_indices[:, 1]] = 1
     
     for key in previous_marker.keys():
         coord = previous_marker[key]
-        diff = black_pixel_indices.to(torch.float32) - coord
+        diff = pixel_indices.to(torch.float32) - coord
         distances = torch.sqrt((diff ** 2).sum(dim=1))
         sorted_indices = torch.argsort(distances)
-        closest_indices = black_pixel_indices[sorted_indices[:pixel_per_marker]]
+        closest_indices = pixel_indices[sorted_indices[:pixel_per_marker]]
         marker[key] = closest_indices
 
     segments = marker
