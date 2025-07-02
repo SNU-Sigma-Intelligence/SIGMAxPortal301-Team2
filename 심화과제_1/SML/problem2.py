@@ -1,6 +1,8 @@
 import torch
-import cv2
 from scipy.ndimage import label
+from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize
+
 import numpy as np
 from typing import Tuple
 
@@ -115,24 +117,145 @@ def show_picture_with_marker_vector(frame, marker, title="Title"):
     plt.show()
 
 
-def compute_projection_relation_assuming_perfect_2d_camera(
-    X: torch.Tensor,
-    Y: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def compute_projection_relation_assuming_perfect_2d_camera(X: torch.Tensor, Y: torch.Tensor):
     """
-    Compute in-plane 2×2 map M, angle θ, and intersection-line direction e.
+    Fit y_i ≈ R(θ)·diag(a,b)·x_i in least-squares sense with θ free and a,b≥0.
 
-    Y = M X
-    M = Y X^T (X X^T)^{-1}
-    θ = arccos(det(M))
-    M e = e
+    Parameters
+    ----------
+    X : torch.Tensor, shape (N,2)
+    Y : torch.Tensor, shape (N,2)
+
+    Returns
+    -------
+    theta : torch.Tensor
+        Optimal rotation angle in radians.
+    a : torch.Tensor
+        Scale along the first axis (≥0).
+    b : torch.Tensor
+        Scale along the second axis (≥0).
+    R : torch.Tensor, shape (2,2)
+        Rotation matrix R(θ).
+    D : torch.Tensor, shape (2,2)
+        Diagonal scaling matrix diag(a,b).
     """
-    XXT = X @ X.T
-    M = Y @ X.T @ torch.inverse(XXT)
-    detM = torch.det(M).clamp(-1.0, 1.0)
-    theta = torch.acos(detM)
-    eigvals, eigvecs = torch.linalg.eig(M)
-    idx = torch.argmin((eigvals - 1.0).abs()).item()
-    e = eigvecs[:, idx].real
-    e = e / e.norm()
-    return M, theta, e
+    X_np = X.cpu().double().numpy()
+    Y_np = Y.cpu().double().numpy()
+    denom_a = np.sum(X_np[:,0]**2)
+    denom_b = np.sum(X_np[:,1]**2)
+
+    def cost(theta):
+        c, s = np.cos(theta), np.sin(theta)
+        Rinv = np.array([[ c, s],[-s, c]])
+        U = Y_np.dot(Rinv.T)
+        a_ = np.sum(U[:,0] * X_np[:,0]) / denom_a
+        b_ = np.sum(U[:,1] * X_np[:,1]) / denom_b
+        a_ = max(0.0, a_)
+        b_ = max(0.0, b_)
+        R = np.array([[c, -s],[s, c]])
+        Y_pred = (X_np * np.array([a_, b_])).dot(R.T)
+        return np.sum((Y_np - Y_pred)**2)
+
+    res = minimize_scalar(cost, bounds=(-np.pi, np.pi), method='bounded')
+    theta_opt = res.x
+    c, s = np.cos(theta_opt), np.sin(theta_opt)
+    Rinv = np.array([[ c, s],[-s, c]])
+    U_opt = Y_np.dot(Rinv.T)
+    a_opt = np.sum(U_opt[:,0] * X_np[:,0]) / denom_a
+    b_opt = np.sum(U_opt[:,1] * X_np[:,1]) / denom_b
+    a_opt = max(0.0, a_opt)
+    b_opt = max(0.0, b_opt)
+    theta = torch.tensor(theta_opt, dtype=X.dtype, device=X.device)
+    a = torch.tensor(a_opt, dtype=X.dtype, device=X.device)
+    b = torch.tensor(b_opt, dtype=X.dtype, device=X.device)
+    R = torch.tensor([[c, -s],[s, c]], dtype=X.dtype, device=X.device)
+    D = torch.diag(torch.tensor([a_opt, b_opt], dtype=X.dtype, device=X.device))
+    return theta * 180.0 / torch.pi, a, b, R, D
+
+def fit_TR(X, Y):
+    X = np.asarray(X, float)
+    Y = np.asarray(Y, float)
+
+    def cost(vars):
+        th_deg, ph_deg, r_deg = vars
+        th = np.deg2rad(th_deg)
+        ph = np.deg2rad(ph_deg)
+        r  = np.deg2rad(r_deg)
+
+        cth, sth = np.cos(th), np.sin(th)
+        Rth = np.array([[ cth, -sth],
+                        [ sth,  cth]])
+
+        cph, sph = np.cos(ph), np.sin(ph)
+        Rph = np.array([[ cph, -sph],
+                        [ sph,  cph]])
+        D   = np.diag([1.0, np.cos(r)])
+        Tmat= Rph.dot(D).dot(Rph.T)
+
+        Ypred = (X.dot(Rth.T)).dot(Tmat.T)
+        return np.sum((Y - Ypred)**2)
+
+    res = minimize(
+      cost,
+      x0=[0.0, 0.0, 0.0],
+      bounds=[(0,360), (0,360), (0,180)],
+      method='L-BFGS-B'
+    )
+
+    th_deg, ph_deg, r_deg = res.x.tolist()
+
+    th, ph, r = np.deg2rad(th_deg), np.deg2rad(ph_deg), np.deg2rad(r_deg)
+    R = np.array([[ np.cos(th), -np.sin(th)],
+                  [ np.sin(th),  np.cos(th)]])
+    Rph = np.array([[ np.cos(ph), -np.sin(ph)],
+                    [ np.sin(ph),  np.cos(ph)]])
+    T = Rph.dot(np.diag([1.0, np.cos(r)])).dot(Rph.T)
+
+    return th_deg, ph_deg, r_deg, R, T
+
+def fit_TR_analytic(X, Y):
+    """
+    Analytically fit Y ≈ T(φ,ρ)·R(θ)·X in least‑squares sense.
+
+    Returns angle θ in degrees ∈ [-180,180], and φ, ρ in degrees ∈ [0,180],
+    along with the 2×2 matrices R(θ) and T(φ,ρ).
+    """
+    X = np.asarray(X, float) 
+    Y = np.asarray(Y, float) 
+    
+    XtX = X.T.dot(X)   
+    W = np.linalg.inv(XtX).dot(X.T).dot(Y)  
+    M = W.T                        
+
+    U, S, Vt = np.linalg.svd(M, full_matrices=False)
+    sigma1, sigma2 = S  
+
+    ratio = sigma2 / sigma1
+    ratio = np.clip(ratio, -1.0, 1.0)
+
+    phi = np.degrees(np.arctan2(U[1,0], U[0,0]))
+    if phi > 180:
+        phi -= 360
+    if phi <= -180:
+        phi += 360
+
+    rho = np.degrees(np.arccos(ratio))
+
+    R = U.dot(Vt)
+    theta = np.degrees(np.arctan2(R[1,0], R[0,0]))
+
+    ph = np.radians(phi)
+    cph, sph = np.cos(ph), np.sin(ph)
+    Rph = np.array([[ cph, -sph], [ sph,  cph]])
+    D = np.diag([1.0, np.cos(np.radians(rho))])
+    T = Rph.dot(D).dot(Rph.T)
+
+    if theta > 180:
+        theta -= 360
+    if theta <= -180:
+        theta += 360
+
+    if phi < 0:
+        phi += 180
+
+    return float(theta), float(phi), float(rho), R, T
