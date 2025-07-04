@@ -1,86 +1,77 @@
 import numpy as np
-import cv2
+import cv2 as cv
 import glob
+import os
 import matplotlib.pyplot as plt
-from os import getcwd
 
-def calibrateCamera(showPics=True):
-    # Load images
-    root = getcwd()
-    calibrationInput = os.path.join(root, 'demoImages/calibration')
-    imgPathList = glob.glob(os.path.join(calibrationInput, '*.jpg'))
+def calibrate(showPics=True):
+    # Read Image
+    root = os.getcwd()
+    calibrationDir = os.path.join(root, 'demoImages/calibration')
+    imgPathList = glob.glob(os.path.join(calibrationDir, '*.jpg'))
 
-    # Initialize parameters
+    # Initialize
     nRows = 9
     nCols = 6
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    
+    termCriteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    worldPtsCur = np.zeros((nRows * nCols, 3), np.float32)
+    worldPtsCur[:, :2] = np.mgrid[0:nRows, 0:nCols].T.reshape(-1, 2)
     worldPtsList = []
     imgPtsList = []
 
     # Find Corners
-    for imgPath in imgPathList:
-        imgBGR = cv2.imread(imgPath)
-        imgGray = cv2.cvtColor(imgBGR, cv2.COLOR_BGR2GRAY)
-        
-        cornersFound, corners = cv2.findChessboardCorners(imgGray, (nRows, nCols), None)
-        
+    for curImgPath in imgPathList:
+        imgBGR = cv.imread(curImgPath)
+        imgGray = cv.cvtColor(imgBGR, cv.COLOR_BGR2GRAY)
+        cornersFound, cornersOrg = cv.findChessboardCorners(imgGray, (nRows, nCols), None)
+
         if cornersFound == True:
-            worldPtsList.append(worldPtsList)
-            cornersRefined = cv2.cornerSubPix(imgGray, corners, (11, 11), (-1, -1), criteria)
+            worldPtsList.append(worldPtsCur)
+            cornersRefined = cv.cornerSubPix(imgGray, cornersOrg, (11, 11), (-1, -1), termCriteria)
             imgPtsList.append(cornersRefined)
-            
+
             if showPics:
-                cv2.drawChessboardCorners(imgBGR, (nRows, nCols), cornersRefined, cornersFound)
-                cv2.imshow("Chessboard", imgBGR)
-                cv2.waitKey(500)
-    cv2.destroyAllWindows()
+                cv.drawChessboardCorners(imgBGR, (nRows, nCols), cornersRefined, cornersFound)
+                cv.imshow('Chessboard', imgBGR)
+                cv.waitKey(500)
 
     # Calibrate
-    camMatrix, distCoeff, rvecs, tvecs = cv2.calibrateCamera(worldPtsList, imgPtsList, imgGray.shape[::-1], None, None)
-    print("Camera Matrix:", camMatrix)
-    print("Reprojection Error (pixels): {:.4f}".format(reprojError))
+    repError, camMatrix, distCoeff, rvecs, tvecs = cv.calibrateCamera(worldPtsList, imgPtsList, imgGray.shape[::-1], None, None)
+    print('Camera matrix:\n', camMatrix)
+    print('Reprojection Error (pixels): {:.4f}'.format(repError))
 
     # Save Calibration Parameters (later video)
-    paramFolder = os.path.dirname(os.path.abspath(__file__))
-    paramFile = os.path.join(paramFolder, 'calibration.npy')
-    np.save(paramFile, camMatrix)
+    paramPath = os.path.join(root, 'camera_calibration_params.npy')
+    np.savez(paramPath, repError=repError, camMatrix=camMatrix, distCoeff=distCoeff, rvecs=rvecs, tvecs=tvecs)
 
-    return camMatrix, distCoeff, rvecs, tvecs
-
+    return camMatrix, distCoeff
 
 def removeDistortion(camMatrix, distCoeff):
-    # Remove distortion
-    root = getcwd()
-    imgPath = os.path.join(root, 'demoImages/distortion')
-    img = cv2.imread(imgPath)
-    
-    h, w = img.shape[:2]
-    newCamMatrix, roi = cv2.getOptimalNewCameraMatrix(camMatrix, distCoeff, (w, h), 1, (w, h))
-    
-    imgUndist = cv2.undistort(img, camMatrix, distCoeff, None, newCamMatrix)
-    
-    cv2.imwrite('undistorted_image.jpg', imgUndist)
-    return imgUndist
+    root = os.getcwd()
+    imgPath = os.path.join(root, 'demoImages/distortion2.jpg')
+    img = cv.imread(imgPath)
+    height, width = img.shape[:2]
+    camMatrixNew, roi = cv.getOptimalNewCameraMatrix(camMatrix, distCoeff, (width, height), 1, (width, height))
+    imgUndist = cv.undistort(img, camMatrix, distCoeff, None, camMatrixNew)
 
+    # Draw Line to See Distortion Change
+    cv.line(img, (1769, 103), (1780, 922), (255, 255, 255), 2)
+    cv.line(imgUndist, (1769, 103), (1780, 922), (255, 255, 255), 2)
 
-# Draw Lines to See Distortion Change
-img = cv2.imread(imgPath)
-cv2.line(img, (1769,1033), (1780,922), (255,255,255), 2)
-cv2.line(img, (1769,1033), (1780,922), (255,255,255), 2)
+    plt.figure()
+    plt.subplot(121)
+    plt.imshow(img)
+    plt.subplot(122)
+    plt.imshow(imgUndist)
+    plt.show()
 
-plt.figure()
-plt.subplot(121)
-plt.imshow(img)
-plt.subplot(122)
-plt.imshow(imgUndist)
-plt.show()
-
-# Run Calibration
 def runCalibration():
-    calibrateCamera(showPics=True)
-    runRemoveDistortion()
-    return
+    calibrate(showPics=True)
+
+def runRemoveDistortion():
+    camMatrix, distCoeff = calibrate(showPics=False)
+    removeDistortion(camMatrix, distCoeff)
 
 if __name__ == '__main__':
     runCalibration()
+    # runRemoveDistortion()
