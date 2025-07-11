@@ -41,7 +41,7 @@ def heuristic_marker_highlight_for_first_frame(frame, marker="red",
     renamed_segments = {}
     if len(sorted_segments) > number_of_markers:
         for i in range(number_of_markers):
-            renamed_segments[f"Marker {i+1}"] = sorted_segments[i][1]
+            renamed_segments[f"Marker {i+1}"] = sorted_segments[i][1] #sorted_segments[i][1] is the indices of the segment
 
     segments = renamed_segments
 
