@@ -72,6 +72,6 @@ def runRemoveDistortion():
     camMatrix, distCoeff = calibrate(showPics=False)
     removeDistortion(camMatrix, distCoeff)
 
-if __name__ == '__main__':
-    runCalibration()
-    # runRemoveDistortion()
+# if __name__ == '__main__':
+#     runCalibration()
+#     # runRemoveDistortion()
