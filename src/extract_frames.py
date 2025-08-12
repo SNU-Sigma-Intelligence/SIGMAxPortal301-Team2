@@ -29,7 +29,7 @@ def extract_frames(video_path, output_dir, frames_per_second):
             break  # End of video
 
         if frame_idx % interval == 0:
-            frame_filename = os.path.join(output_dir, f"frame_{frame_idx:05d}.jpg")
+            frame_filename = os.path.join(output_dir, f"frame{frame_idx:04d}.jpg")
             cv2.imwrite(frame_filename, frame)
             saved_count += 1
 
@@ -38,10 +38,4 @@ def extract_frames(video_path, output_dir, frames_per_second):
     cap.release()
     print(f"Saved {saved_count} frames to '{output_dir}'")
 
-# Example usage
-if __name__ == "__main__":
-    video_path = "your_video.mp4"          # Replace with your actual video file
-    output_dir = "extracted_frames"        # Where to save frames
-    frames_per_second = 2                  # Change this value as needed
 
-    extract_frames(video_path, output_dir, frames_per_second)

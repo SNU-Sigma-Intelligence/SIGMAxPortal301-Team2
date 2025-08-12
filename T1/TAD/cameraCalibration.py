@@ -13,6 +13,10 @@ def calibrate_camera(imagesPath, square_size):
     imgpoints = []
 
     imagesList = glob.glob(os.path.join(imagesPath, 'calibration*.jpg'))
+    print("Exists in cc file:", os.path.exists(imagesPath))
+    print("Files in cc file:", os.listdir(imagesPath))
+    # imagesList = sorted(glob.glob(os.path.join(imagesPath, 'frame*.jpg')))
+
     if not imagesList:
         print(f"No images found in {imagesPath}")
         return
@@ -47,9 +51,16 @@ def calibrate_camera(imagesPath, square_size):
     print("Camera matrix:\n", camera_matrix)
     print("Distortion coefficients:\n", dist_coeffs)
 
+    
     mean_error = 0
     for i in range(len(objpoints)):
         imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], camera_matrix, dist_coeffs)
         error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
         mean_error += error
-    print("Total reprojection error:", mean_error / len(objpoints))
+        repError = mean_error / len(objpoints)
+    print("Total reprojection error:", repError)
+
+    # Save Calibration Parameters (later video)
+    paramPath = os.path.join(imagesPath, 'camera_calibration_params')
+    np.savez(paramPath, repError=repError, camMatrix=camera_matrix, distCoeff=dist_coeffs, rvecs=rvecs, tvecs=tvecs)
+

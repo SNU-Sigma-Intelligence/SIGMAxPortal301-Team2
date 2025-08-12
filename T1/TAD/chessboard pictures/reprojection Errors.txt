@@ -1,0 +1,20 @@
+Time - 2025-08-12 13:16:04  (close range_3840)
+  Global RMSE       : 1.860048 px
+  Global Mean Error : 1.408189 px
+----------------------------------------
+Time - 2025-08-12 13:18:35  (mid range_50)
+  Global RMSE       : 1.319175 px
+  Global Mean Error : 1.093113 px
+----------------------------------------
+Time - 2025-08-12 13:23:35  (mid to long range_100)
+  Global RMSE       : 4.046503 px
+  Global Mean Error : 2.687052 px
+
+Time - 2025-08-12 14:49:16 (close range_3840) (with Robust flag)
+  Global RMSE       : 1.869154 px
+  Global Mean Error : 1.420916 px
+----------------------------------------
+Time - 2025-08-12 14:55:38 (long range_145150) (only with Robust flag)
+  Global RMSE       : 6.037784 px
+  Global Mean Error : 5.728241 px
+----------------------------------------
