@@ -1,0 +1,41 @@
+# Captured images and output directories
+captured_images/
+custom_output/
+custom_capture_folder/
+high_speed_capture/
+runtime_modified_capture/
+
+# Image files from webcam capture
+image_*.jpg
+image_*.png
+
+# Video output files
+output.avi
+*.mp4
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Camera calibration output
+camera_calibration_params.npz
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
